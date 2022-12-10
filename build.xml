@@ -1,0 +1,1078 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Licensed to the Apache Software Foundation (ASF) under one or more
+contributor license agreements.  See the NOTICE file distributed with
+this work for additional information regarding copyright ownership.
+The ASF licenses this file to you under the Apache License,
+Version 2.0 (the "License"); you may not use this file except in
+compliance with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+<project name="pivot" default="environment-info"
+    xmlns:artifact="antlib:org.apache.maven.artifact.ant"
+    xmlns:cs="antlib:com.puppycrawl.tools.checkstyle.ant"
+    xmlns:if="ant:if"
+    xmlns:unless="ant:unless"
+>
+    <!-- Java-version-related properties -->
+    <condition property="java_modules" value="true" else="false">
+        <not>
+            <!-- Since we only support Java 8 or above here, anything not 8 must be 9 or above -->
+            <equals arg1="${ant.java.version}" arg2="1.8"/>
+        </not>
+    </condition>
+
+    <!-- Classpath-related properties -->
+    <property environment="env"/>
+    <path id="classpath.env">
+        <pathelement location="${env.CLASSPATH}"/>
+    </path>
+    <path id="classpath.javalib">
+        <fileset dir="${java.home}/lib">
+            <include name="**/*.jar"/>
+            <exclude name="**/jfxrt.jar"/>
+            <exclude name="missioncontrol/**/*.jar" if:true="${java_modules}"/>
+        </fileset>
+    </path>
+    <property name="classpath_env" refid="classpath.env"/>
+    <property name="classpath_javalib" refid="classpath.javalib"/>
+    <path id="classpath.general">
+        <pathelement path="${classpath_env}/"/>
+        <pathelement path="${classpath_javalib}"/>
+    </path>
+
+    <!-- Properties that affect the directories that are created as part of the build -->
+    <property name="folder.src" value="src"/>
+    <property name="folder.bin" value="ant-bin"/>
+    <property name="folder.dist" value="dist"/>
+    <property name="folder.doc" value="doc"/>
+    <property name="folder.install" value="install"/>
+    <property name="folder.lib" value="lib"/>
+    <property name="folder.deploy" value="deploy"/>
+
+    <!-- Keystore properties -->
+    <property name="keystore.location" value="etc/pivot.keystore"/>
+    <property name="keystore.alias" value="pivot"/>
+    <property name="keystore.passwd" value="apache"/>
+
+    <!-- Dynamic properties -->
+    <property file="build.properties"/>
+    <property name="release" value="apache-${ant.project.name}-${version}"/>
+    <exec executable="svn" dir="." output="svnlog">
+        <arg value="info"/>
+    </exec>
+    <loadproperties srcFile="svnlog">
+        <filterchain>
+            <linecontains>
+                <contains value="Last Changed Rev:"/>
+            </linecontains>
+            <replacestring from="Last Changed Rev:" to="lastchangedrev="/>
+        </filterchain>
+    </loadproperties>
+    <echo message="Last Changed Revision: ${lastchangedrev}"/>
+    <propertyfile file="build.number" comment="## Auto generated build number. DO NOT MODIFY!">
+        <entry key="build.number" type="string" operation="=" value="${lastchangedrev}"/>
+    </propertyfile>
+    <property file="build.number"/>
+    <echo message="Build Number: ${build.number}"/>
+
+    <!-- Compiler properties and Test properties have been moved into build.properties -->
+
+    <!-- Jar file names -->
+    <property name="jar.charts" value="${ant.project.name}-charts-${version}.jar" />
+    <property name="jar.core" value="${ant.project.name}-core-${version}.jar" />
+    <property name="jar.demos" value="${ant.project.name}-demos-${version}.jar" />
+    <property name="jar.demos-server" value="${ant.project.name}-demos-server-${version}.jar" />
+    <property name="jar.tutorials" value="${ant.project.name}-tutorials-${version}.jar" />
+    <property name="jar.tutorials-server" value="${ant.project.name}-tutorials-server-${version}.jar" />
+    <property name="jar.web" value="${ant.project.name}-web-${version}.jar" />
+    <property name="jar.web-server" value="${ant.project.name}-web-server-${version}.jar" />
+    <property name="jar.wtk" value="${ant.project.name}-wtk-${version}.jar" />
+    <property name="jar.wtk-terra" value="${ant.project.name}-wtk-terra-${version}.jar" />
+    <property name="jar.tests" value="${ant.project.name}-tests-${version}.jar" />
+
+    <!-- Maven Sources Jar file names -->
+    <property name="jar.charts.sources" value="${ant.project.name}-charts-${version}-sources.jar" />
+    <property name="jar.core.sources" value="${ant.project.name}-core-${version}-sources.jar" />
+    <property name="jar.web.sources" value="${ant.project.name}-web-${version}-sources.jar" />
+    <property name="jar.web-server.sources" value="${ant.project.name}-web-server-${version}-sources.jar" />
+    <property name="jar.wtk.sources" value="${ant.project.name}-wtk-${version}-sources.jar" />
+    <property name="jar.wtk-terra.sources" value="${ant.project.name}-wtk-terra-${version}-sources.jar" />
+
+    <!-- Maven Javadoc Jar file names -->
+    <property name="jar.charts.javadoc" value="${ant.project.name}-charts-${version}-javadoc.jar" />
+    <property name="jar.core.javadoc" value="${ant.project.name}-core-${version}-javadoc.jar" />
+    <property name="jar.web.javadoc" value="${ant.project.name}-web-${version}-javadoc.jar" />
+    <property name="jar.web-server.javadoc" value="${ant.project.name}-web-server-${version}-javadoc.jar" />
+    <property name="jar.wtk.javadoc" value="${ant.project.name}-wtk-${version}-javadoc.jar" />
+    <property name="jar.wtk-terra.javadoc" value="${ant.project.name}-wtk-terra-${version}-javadoc.jar" />
+
+    <!-- Base package, required by Maven Javadoc -->
+    <property name="src.package.base" value="org.apache.pivot" />
+
+    <!-- Conditions that change for Jenkins build jobs -->
+    <condition property="is.jenkins" value="true" else="false">
+        <isset property="running.on.jenkins"/>
+    </condition>
+
+    <!-- Definitions of the various translated resource files -->
+    <patternset id="resource-files">
+        <include name="**/src/**/Localization*.json"/>
+        <include name="**/src/**/StockTrackerWindow*.json"/>
+        <include name="**/src/**/Alert*.json"/>
+        <include name="**/src/**/Prompt*.json"/>
+        <include name="**/src/**/TerraCalendarSkin*.json"/>
+        <include name="**/src/**/TerraFileBrowserSheetSkin*.json"/>
+        <include name="**/src/**/TerraFileBrowserSkin*.json"/>
+        <include name="**/src/**/TerraVFSBrowserSheetSkin*.json"/>
+        <include name="**/src/**/TerraVFSBrowserSkin*.json"/>
+    </patternset>
+
+    <!-- Ant version check -->
+    <fail>
+        <condition>
+            <not>
+                <antversion atleast="1.9.0"/>
+            </not>
+        </condition>
+        <![CDATA[
+        Error:
+
+        Building Pivot requires Apache Ant 1.9 or greater. Please see the BUILD
+        file for more information.
+        ]]>
+    </fail>
+
+    <!-- Compile macro -->
+    <macrodef name="compile">
+        <attribute name="project"/>
+        <element name="project-lib" implicit="true" optional="true"/>
+
+        <sequential>
+            <!-- JDK version check -->
+            <fail>
+                <condition>
+                    <not>
+                        <or>
+                            <equals arg1="${ant.java.version}" arg2="1.8"/>
+                            <equals arg1="${ant.java.version}" arg2="9"/>
+                            <equals arg1="${ant.java.version}" arg2="10"/>
+                        </or>
+                    </not>
+                </condition>
+                <![CDATA[
+                Error:
+
+                Building Pivot requires JDK 1.8 or greater. Please see the
+                BUILD file for more information.
+                ]]>
+            </fail>
+
+            <!-- JUnit check -->
+            <fail>
+                <condition>
+                    <not>
+                        <and>
+                            <available classname="org.junit.Test" ignoreSystemClasses="${is.jenkins}" classpath="${classpath}" />
+                            <hasmethod classname="org.junit.Assert" method="assertNotEquals" ignoreSystemClasses="${is.jenkins}" classpath="${classpath}" />
+                        </and>
+                    </not>
+                </condition>
+                <![CDATA[
+                Error:
+
+                JUnit 4.11 (or greater) must be on your classpath. Please see the BUILD
+                file for more information.
+                ]]>
+            </fail>
+
+            <mkdir dir="@{project}/${folder.bin}"/>
+            <javac destDir="@{project}/${folder.bin}"
+                includejavaruntime="no"
+                includeantruntime="no"
+                deprecation="${compiler.deprecation}"
+                debug="${compiler.debug}"
+                source="${compiler.source}"
+                target="${compiler.target}"
+                bootclasspath="${compiler.bootstrap.path}"
+                encoding="${compiler.encoding}"
+                failonerror="true"
+            >
+                <src>
+                    <dirset dir="@{project}">
+                        <include name="src"/>
+                        <include name="test"/>
+                    </dirset>
+                </src>
+                <compilerarg line="${compiler.arg}"/>
+                <classpath>
+                    <path refid="classpath.general"/>
+                    <dirset dir="${basedir}" includes="**/${folder.bin}"/>
+                    <fileset dir="@{project}" includes="lib/**/*.jar"/>
+                    <project-lib/>
+                </classpath>
+            </javac>
+        </sequential>
+    </macrodef>
+
+    <!-- Test macro -->
+    <macrodef name="test">
+        <attribute name="project"/>
+
+        <sequential>
+            <echo message="@{project}: Executing test cases..."/>
+
+            <condition property="test.formatter">
+                <istrue value="${test.verbose}"/>
+            </condition>
+
+            <junit fork="true" failureproperty="unit.tests.failed">
+                <classpath>
+                    <path refid="classpath.general"/>
+                    <fileset dir="${basedir}" includes="lib/*.jar"/>
+                    <dirset dir="${basedir}" includes="**/${folder.bin}"/>
+                    <dirset dir="@{project}" includes="test"/>
+                    <fileset dir="@{project}" includes="lib/**/*.jar"/>
+                </classpath>
+
+                <formatter type="brief" usefile="false" if="test.formatter"/>
+
+                <batchtest>
+                    <fileset dir="@{project}/test" includes="**/*Test.java"/>
+                </batchtest>
+            </junit>
+        </sequential>
+    </macrodef>
+
+    <!-- Package macro -->
+    <macrodef name="package">
+        <attribute name="project"/>
+        <attribute name="jarFile"/>
+        <attribute name="title"/>
+
+        <sequential>
+            <mkdir dir="${folder.lib}"/>
+            <jar destfile="${folder.lib}/@{jarFile}" index="${compiler.indexJars}">
+                <metainf dir="${basedir}">
+                    <include name="LICENSE"/>
+                    <include name="NOTICE"/>
+                    <include name="README"/>
+                </metainf>
+                <manifest>
+                    <attribute name="Sealed" value="true"/>
+                    <attribute name="Specification-Title" value="Apache Pivot @{title}"/>
+                    <attribute name="Specification-Version" value="${version}"/>
+                    <attribute name="Specification-Vendor" value="The Apache Software Foundation"/>
+                    <attribute name="Implementation-Vendor-Id" value="org.apache"/>
+                    <attribute name="Implementation-Vendor" value="The Apache Software Foundation"/>
+                    <attribute name="Implementation-Title" value="Apache Pivot @{title}"/>
+                    <attribute name="Implementation-Version" value="${version}_${build.number}"/>
+                    <attribute name="Permissions" value="${permissions}"/>
+                    <attribute name="Codebase" value="*"/>
+                    <attribute name="Caller-Allowable-Codebase" value="*"/>
+                    <attribute name="Application-Library-Allowable-Codebase" value="*"/>
+                </manifest>
+                <fileset dir="@{project}/${folder.bin}">
+                    <exclude name="**/test/**"/>
+                    <exclude name="**/*.bxml"/>
+                    <exclude name="**/*.js"/>
+                    <exclude name="**/*.jpg"/>
+                    <exclude name="**/*.json"/>
+                    <exclude name="**/*.png"/>
+                    <exclude name="**/*.svg"/>
+                    <exclude name="**/*.txt"/>
+                </fileset>
+                <fileset dir="@{project}/src">
+                    <exclude name="**/*.java"/>
+                    <exclude name="**/*.bak"/>
+                    <exclude name="**/package.html"/>
+                </fileset>
+            </jar>
+        </sequential>
+    </macrodef>
+
+    <!-- Package-maven-source-or-javadoc-jar macro -->
+    <macrodef name="package-maven-source-or-javadoc-jar">
+        <attribute name="project"/>
+        <attribute name="jarFile"/>
+        <attribute name="title"/>
+        <attribute name="jarFileset"/>
+
+        <sequential>
+            <mkdir dir="${folder.lib}"/>
+            <jar destfile="${folder.lib}/@{jarFile}" index="${compiler.indexJars}">
+                <metainf dir="${basedir}">
+                    <include name="LICENSE"/>
+                    <include name="NOTICE"/>
+                    <include name="README"/>
+                </metainf>
+                <manifest>
+                    <attribute name="Sealed" value="true"/>
+                    <attribute name="Implementation-Vendor-Id" value="org.apache"/>
+                    <attribute name="Implementation-Vendor" value="The Apache Software Foundation"/>
+                    <attribute name="Implementation-Title" value="Apache Pivot @{title}"/>
+                    <attribute name="Implementation-Version" value="${version}_${build.number}"/>
+                    <attribute name="Permissions" value="${permissions}"/>
+                    <attribute name="Codebase" value="*"/>
+                    <attribute name="Caller-Allowable-Codebase" value="*"/>
+                    <attribute name="Application-Library-Allowable-Codebase" value="*"/>
+                </manifest>
+                <fileset dir="@{jarFileset}">
+                    <include name="LICENSE"/>
+                    <include name="NOTICE"/>
+                    <include name="README"/>
+                    <include name="RELEASE-NOTES"/>
+                    <include name="**/*.java"/>
+                    <include name="**/*.html"/>
+                    <include name="**/*.jsp"/>
+                    <include name="**/*.txt"/>
+                    <include name="**/*.properties"/>
+                    <include name="**/*.xml"/>
+                    <include name="**/*.bxml"/>
+                    <include name="**/*.json"/>
+                    <include name="**/*.jpg"/>
+                    <include name="**/*.png"/>
+                    <include name="**/*.svg"/>
+                    <exclude name="**/*.class"/>
+                </fileset>
+            </jar>
+        </sequential>
+    </macrodef>
+
+    <!-- Package-sources macro -->
+    <macrodef name="package-sources">
+        <attribute name="project"/>
+        <attribute name="jarFile"/>
+        <attribute name="title"/>
+
+        <sequential>
+            <mkdir dir="${folder.lib}"/>
+            <package-maven-source-or-javadoc-jar
+                project="@{project}"
+                jarFile="@{jarFile}"
+                title="@{title}"
+                jarFileset="@{project}/src"
+            />
+        </sequential>
+    </macrodef>
+
+    <!-- Package-javadoc macro -->
+    <macrodef name="package-javadoc">
+        <attribute name="project"/>
+        <attribute name="jarFile"/>
+        <attribute name="title"/>
+        <attribute name="package"/>
+
+        <sequential>
+            <mkdir dir="${folder.lib}"/>
+            <delete file="${folder.lib}/@{jarFile}" failonerror="false"/>
+            <delete dir="${folder.doc}/@{jarFile}" failonerror="false"/>
+
+            <javadoc packagenames="@{package}"
+                destdir="${folder.doc}/@{jarFile}"
+                author="true" version="true" use="true"
+                package="true"
+                classpath="${java.class.path}">
+                <classpath>
+                    <path refid="classpath.general"/>
+                    <fileset dir="web-server/lib" includes="**/*.jar"/>
+                    <fileset dir="wtk/lib" includes="**/*.jar"/>
+
+                    <dirset dir="@{project}/../">
+                      <include name="charts/${folder.bin}"/>
+                      <include name="core/${folder.bin}"/>
+                      <include name="web/${folder.bin}"/>
+                      <include name="web-server/${folder.bin}"/>
+                      <include name="wtk/${folder.bin}"/>
+                      <include name="wtk-terra/${folder.bin}"/>
+                    </dirset>
+                </classpath>
+
+                <packageset dir="@{project}/src" includes="**/*"/>
+
+                <link href="http://download.oracle.com/javase/8/docs/api"/>
+                <link href="http://download.oracle.com/javaee/7/api/"/>
+
+                <arg value="-html4" if:true="${java_modules}"/>
+                <arg value="--add-modules" if:true="${java_modules}"/>
+                <arg value="java.activation" if:true="${java_modules}"/>
+            </javadoc>
+
+            <package-maven-source-or-javadoc-jar
+                project="@{project}"
+                jarFile="@{jarFile}"
+                title="@{title}"
+                jarFileset="${folder.doc}/@{jarFile}"
+            />
+        </sequential>
+    </macrodef>
+
+    <!-- Clean macro -->
+    <macrodef name="clean">
+        <attribute name="project"/>
+
+        <sequential>
+            <delete includeemptydirs="true">
+                <fileset dir="@{project}">
+                    <include name="${folder.bin}/**"/>
+                    <include name="${folder.deploy}/**"/>
+                </fileset>
+                <fileset dir="${basedir}">
+                    <include name="${folder.lib}/${ant.project.name}-@{project}-${version}.jar"/>
+                </fileset>
+            </delete>
+        </sequential>
+    </macrodef>
+
+
+    <!-- Return some environmental info -->
+    <target name="environment-info" description="Gives some info on Environment and Compiler flags"
+        depends=""
+    >
+        <echo message=""/>
+        <echo message="${ant.version}"/>
+        <echo message="Compile environment for ${ant.project.name}-${version} is:"/>
+        <echo message="show deprecation ${compiler.deprecation}"/>
+        <echo message="debug ${compiler.debug}"/>
+        <echo message="source ${compiler.source}, target ${compiler.target}"/>
+        <echo message="encoding ${compiler.encoding}"/>
+        <echo message="indexJars ${compiler.indexJars}"/>
+        <echo message="arg ${compiler.arg}"/>
+        <echo message=""/>
+        <echo message="OS: ${os.name}, version ${os.version}, architecture ${os.arch}"/>
+        <echo message=""/>
+        <echo message="Java: home at '${java.home}', version ${java.version}, vendor ${java.vendor}"/>
+        <echo message=""/>
+    </target>
+
+    <!-- Display the classpath -->
+    <target name="environment-classpath" description="Gives some info on Environment and classpath"
+        depends="environment-info"
+    >
+        <echo message="Classpath from env vars: ${classpath_env}"/>
+        <echo message="Classpath from Java lib folder: ${classpath_javalib}"/>
+    </target>
+
+
+    <!-- Compile all classes (not including tests, because they depend on packaged .jar files) -->
+    <target name="compile" description="Compiles all projects"
+        depends="environment-info, charts, core, demos, demos-server, examples, tutorials, tutorials-server, web, web-server, wtk, wtk-terra"/>
+
+    <!-- Compile all classes (tests included) -->
+    <target name="compile-tests" description="Compiles tests after compiling everything else"
+        depends="compile, tests"/>
+
+    <!-- Package JAR files -->
+    <target name="package" description="Packages all projects into JAR files" depends="compile">
+        <package project="charts" jarFile="${jar.charts}" title="Charts"/>
+        <package project="core" jarFile="${jar.core}" title="Core"/>
+        <package project="demos" jarFile="${jar.demos}" title="Demos"/>
+        <package project="demos-server" jarFile="${jar.demos-server}" title="Demos Server"/>
+        <package project="tutorials" jarFile="${jar.tutorials}" title="Tutorials"/>
+        <package project="tutorials-server" jarFile="${jar.tutorials-server}" title="Tutorials Server"/>
+        <package project="web" jarFile="${jar.web}" title="Web"/>
+        <package project="web-server" jarFile="${jar.web-server}" title="Web Server"/>
+        <package project="wtk" jarFile="${jar.wtk}" title="WTK"/>
+        <package project="wtk-terra" jarFile="${jar.wtk-terra}" title="WTK Terra Theme Provider"/>
+    </target>
+
+    <!-- Package JAR file for tests, note that this could be needed only for interactive GUI Tests -->
+    <target name="package-tests" description="Packages only tests project into JAR files" depends="compile-tests">
+        <package project="tests" jarFile="${jar.tests}" title="Tests"/>
+    </target>
+
+    <!-- Package Maven Sources JAR files -->
+    <target name="package-sources" description="Packages any project sources into a JAR file" depends="trim-whitespace, package">
+        <package-sources project="charts" jarFile="${jar.charts.sources}" title="Charts"/>
+        <package-sources project="core" jarFile="${jar.core.sources}" title="Core"/>
+        <package-sources project="web" jarFile="${jar.web.sources}" title="Web"/>
+        <package-sources project="web-server" jarFile="${jar.web-server.sources}" title="Web Server"/>
+        <package-sources project="wtk" jarFile="${jar.wtk.sources}" title="WTK"/>
+        <package-sources project="wtk-terra" jarFile="${jar.wtk-terra.sources}" title="WTK Terra Theme Provider"/>
+    </target>
+
+    <!-- Package Maven Javadoc JAR files -->
+    <target name="package-javadoc" description="Packages any project Javadoc into a JAR file" depends="package-sources">
+        <delete dir="${folder.doc}"/>
+        <package-javadoc project="charts" jarFile="${jar.charts.javadoc}" title="Charts" package="${src.package.base}.charts.*"/>
+        <package-javadoc project="core" jarFile="${jar.core.javadoc}" title="Core" package="${src.package.base}.*"/>
+        <package-javadoc project="web" jarFile="${jar.web.javadoc}" title="Web" package="${src.package.base}.web.*"/>
+        <package-javadoc project="web-server" jarFile="${jar.web-server.javadoc}" title="Web Server" package="${src.package.base}.web.server.*"/>
+        <package-javadoc project="wtk" jarFile="${jar.wtk.javadoc}" title="WTK" package="${src.package.base}.wtk.*"/>
+        <package-javadoc project="wtk-terra" jarFile="${jar.wtk-terra.javadoc}" title="WTK Terra Theme Provider" package="${src.package.base}.wtk.skin.terra.*"/>
+        <delete dir="${folder.doc}"/>
+    </target>
+
+    <!-- Package the internationalizable resources separately for translators -->
+    <target name="package-i18n-resources" description="Packages the internationalizable resources" depends="compile">
+        <zip destfile="${release}-i18n.zip" update="false">
+            <zipfileset dir="." prefix="">
+                <patternset refid="resource-files"/>
+            </zipfileset>
+        </zip>
+    </target>
+
+    <!-- Run unit tests -->
+    <target name="test" description="Executes unit tests" depends="compile-tests">
+        <test project="charts"/>
+        <test project="core"/>
+        <test project="demos"/>
+        <test project="demos-server"/>
+        <test project="examples"/>
+        <test project="tests"/>
+        <test project="tutorials"/>
+        <test project="tutorials-server"/>
+        <test project="web"/>
+        <test project="web-server"/>
+        <test project="wtk"/>
+        <test project="wtk-terra"/>
+        <fail if="unit.tests.failed" message="Error: One or more tests failed!"/>
+    </target>
+
+    <!-- Clean -->
+    <target name="clean" description="Removes all build artifacts">
+        <clean project="charts"/>
+        <clean project="core"/>
+        <clean project="demos"/>
+        <clean project="demos-server"/>
+        <clean project="examples"/>
+        <clean project="tests"/>
+        <clean project="tutorials"/>
+        <clean project="tutorials-server"/>
+        <clean project="web"/>
+        <clean project="web-server"/>
+        <clean project="wtk"/>
+        <clean project="wtk-terra"/>
+        <delete dir="${folder.dist}"/>
+        <delete dir="${folder.doc}"/>
+        <delete dir="${folder.install}"/>
+        <delete dir="${folder.lib}"/>
+    </target>
+
+    <!-- Javadoc -->
+    <target name="doc" description="Generates API documentation in ${folder.doc}">
+        <javadoc packagenames="org.apache.pivot.*" destdir="${folder.doc}"
+            author="true" version="true" use="true"
+            package="true"
+            classpath="${java.class.path}">
+            <classpath>
+                <path refid="classpath.general"/>
+                <fileset dir="web-server/lib" includes="**/*.jar"/>
+                <fileset dir="wtk/lib" includes="**/*.jar"/>
+            </classpath>
+
+            <packageset dir="charts/src" includes="**/*"/>
+            <packageset dir="core/src" includes="**/*"/>
+            <packageset dir="web/src" includes="**/*"/>
+            <packageset dir="web-server/src" includes="**/*"/>
+            <packageset dir="wtk/src" includes="**/*"/>
+            <packageset dir="wtk-terra/src" includes="**/*"/>
+
+            <link href="https://docs.oracle.com/javase/8/docs/api/"/>
+            <link href="http://download.oracle.com/javaee/7/api/"/>
+
+            <arg value="-html4" if:true="${java_modules}"/>
+            <arg value="--add-modules" if:true="${java_modules}"/>
+            <arg value="java.activation" if:true="${java_modules}"/>
+        </javadoc>
+    </target>
+
+    <!-- Individual compile targets resolve inter-project dependency -->
+    <target name="charts" depends="core, wtk">
+        <compile project="charts"/>
+    </target>
+
+    <target name="core">
+        <compile project="core">
+            <fileset dir="wtk" includes="lib/**/*.jar"/>
+        </compile>
+    </target>
+
+    <target name="demos" depends="core, wtk, wtk-terra, web">
+        <compile project="demos"/>
+    </target>
+
+    <target name="demos-server" depends="core, web, web-server">
+        <compile project="demos-server">
+            <fileset dir="web-server" includes="lib/**/*.jar"/>
+        </compile>
+    </target>
+
+    <target name="examples" depends="core, wtk, wtk-terra, web">
+        <compile project="examples"/>
+        <copy todir="examples/${folder.bin}">
+            <fileset dir="examples/src" includes="**/*.bxml"/>
+            <fileset dir="examples/src" includes="**/*.html"/>
+            <fileset dir="examples/src" includes="**/*.icns"/>
+            <fileset dir="examples/src" includes="**/*.ico"/>
+            <fileset dir="examples/src" includes="**/*.json"/>
+            <fileset dir="examples/src" includes="**/*.png"/>
+            <fileset dir="examples/src" includes="**/*.svg"/>
+            <fileset dir="examples/src" includes="**/*.txt"/>
+            <fileset dir="examples/src" includes="**/*.xml"/>
+        </copy>
+    </target>
+
+    <target name="tests" depends="core, web, wtk, wtk-terra">
+        <compile project="tests">
+            <fileset dir="wtk" includes="lib/**/*.jar"/>
+        </compile>
+        <copy todir="tests/${folder.bin}">
+            <fileset dir="tests/src" includes="**/*.bxml"/>
+            <fileset dir="tests/src" includes="**/*.dib"/>
+            <fileset dir="tests/src" includes="**/*.js"/>
+            <fileset dir="tests/src" includes="**/*.jpg"/>
+            <fileset dir="tests/src" includes="**/*.json"/>
+            <fileset dir="tests/src" includes="**/*.png"/>
+            <fileset dir="tests/src" includes="**/*.sql"/>
+            <fileset dir="tests/src" includes="**/*.svg"/>
+            <fileset dir="tests/src" includes="**/*.txt"/>
+        </copy>
+    </target>
+
+    <target name="tutorials" depends="core, wtk, web">
+        <compile project="tutorials"/>
+        <copy todir="tutorials/${folder.bin}">
+            <fileset dir="tutorials/src" includes="**/*.bxml"/>
+            <fileset dir="tutorials/src" includes="**/*.js"/>
+            <fileset dir="tutorials/src" includes="**/*.jpg"/>
+            <fileset dir="tutorials/src" includes="**/*.json"/>
+            <fileset dir="tutorials/src" includes="**/*.png"/>
+            <fileset dir="tutorials/src" includes="**/*.svg"/>
+            <fileset dir="tutorials/src" includes="**/*.txt"/>
+        </copy>
+    </target>
+
+    <target name="tutorials-server" depends="core, web, web-server">
+        <compile project="tutorials-server">
+            <fileset dir="web-server" includes="lib/**/*.jar"/>
+        </compile>
+    </target>
+
+    <target name="web" depends="core">
+        <compile project="web"/>
+    </target>
+
+    <target name="web-server" depends="core, web">
+        <compile project="web-server"/>
+    </target>
+
+    <target name="wtk" depends="core">
+        <fail>
+            <condition>
+                <not>
+                    <available classname="netscape.javascript.JSObject"
+                        classpathref="classpath.general"/>
+                </not>
+            </condition>
+            <![CDATA[
+            Error:
+
+            LiveConnect was not found on your classpath. Please see the BUILD
+            file for more information.
+            ]]>
+        </fail>
+
+        <compile project="wtk"/>
+    </target>
+
+    <target name="wtk-terra" depends="core, wtk">
+        <compile project="wtk-terra">
+            <fileset dir="wtk" includes="lib/**/*.jar"/>
+        </compile>
+    </target>
+
+    <!-- Package source distribution -->
+    <target name="dist" description="Generates source release in ${folder.dist}"
+        depends="clean, trim-whitespace">
+        <mkdir dir="${folder.dist}/${release}-src"/>
+
+        <!-- Copy the source files to the release folder -->
+        <copy todir="${folder.dist}/${release}-src">
+            <fileset dir="${basedir}">
+                <include name="**/*"/>
+
+                <!-- Exclude hidden files and folders -->
+                <exclude name="**/.*/**"/>
+
+                <!-- Exclude folders containing compilation artifacts -->
+                <exclude name="**/${folder.bin}/**"/>
+                <exclude name="${folder.dist}/**"/>
+                <exclude name="${folder.doc}/**"/>
+                <exclude name="${folder.install}/**"/>
+                <exclude name="${folder.lib}/**"/>
+            </fileset>
+        </copy>
+
+        <!-- Create .zip archive -->
+        <zip destfile="${folder.dist}/${release}-src.zip" level="9">
+            <fileset dir="${folder.dist}" includes="${release}-src/**"/>
+        </zip>
+        <checksum file="${folder.dist}/${release}-src.zip" algorithm="md5"/>
+        <checksum file="${folder.dist}/${release}-src.zip" algorithm="sha"/>
+
+        <!-- Create .tar.gz archive -->
+        <tar destfile="${folder.dist}/${release}-src.tar" longfile="gnu">
+            <fileset dir="${folder.dist}" includes="${release}-src/**"/>
+        </tar>
+        <gzip src="${folder.dist}/${release}-src.tar"
+            destfile="${folder.dist}/${release}-src.tar.gz"/>
+        <delete file="${folder.dist}/${release}-src.tar"/>
+        <checksum file="${folder.dist}/${release}-src.tar.gz" algorithm="md5"/>
+        <checksum file="${folder.dist}/${release}-src.tar.gz" algorithm="sha"/>
+    </target>
+
+    <!-- Package binary distribution -->
+    <target name="install" description="Generates binary release in ${folder.install}"
+        depends="clean, package, doc, deploy">
+        <mkdir dir="${folder.install}/${release}/lib"/>
+        <mkdir dir="${folder.install}/${release}/doc"/>
+        <mkdir dir="${folder.install}/${release}/webapps"/>
+
+        <!-- Copy base files to the install folder -->
+        <copy todir="${folder.install}/${release}">
+            <fileset dir="${basedir}">
+                <include name="LICENSE"/>
+                <include name="NOTICE"/>
+                <include name="README"/>
+                <include name="RELEASE-NOTES"/>
+            </fileset>
+        </copy>
+
+        <!-- Copy release binaries -->
+        <copy todir="${folder.install}/${release}/lib">
+            <fileset dir="${folder.lib}">
+                <include name="${jar.charts}"/>
+                <include name="${jar.core}"/>
+                <include name="${jar.web}"/>
+                <include name="${jar.web-server}"/>
+                <include name="${jar.wtk}"/>
+                <include name="${jar.wtk-terra}"/>
+            </fileset>
+        </copy>
+
+        <!-- Copy documentation -->
+        <copy todir="${folder.install}/${release}/doc">
+            <fileset dir="${folder.doc}"/>
+        </copy>
+
+        <!-- Copy webapps -->
+        <copy todir="${folder.install}/${release}/webapps">
+            <fileset dir="${folder.lib}">
+                <include name="${ant.project.name}-demos.war"/>
+                <include name="${ant.project.name}-tutorials.war"/>
+            </fileset>
+        </copy>
+
+        <!-- Create .zip archive -->
+        <zip destfile="${folder.install}/${release}.zip" level="9">
+            <fileset dir="${folder.install}" includes="${release}/**"/>
+        </zip>
+        <checksum file="${folder.install}/${release}.zip" algorithm="md5"/>
+        <checksum file="${folder.install}/${release}.zip" algorithm="sha"/>
+
+        <!-- Create .tar.gz archive -->
+        <tar destfile="${folder.install}/${release}.tar" longfile="gnu">
+            <fileset dir="${folder.install}" includes="${release}/**"/>
+        </tar>
+        <gzip src="${folder.install}/${release}.tar" destfile="${folder.install}/${release}.tar.gz"/>
+        <delete file="${folder.install}/${release}.tar"/>
+        <checksum file="${folder.install}/${release}.tar.gz" algorithm="md5"/>
+        <checksum file="${folder.install}/${release}.tar.gz" algorithm="sha"/>
+    </target>
+
+    <!-- Generate deployment files -->
+    <target name="deploy" depends="package">
+        <!-- Copy library dependencies lib directory -->
+        <copy todir="${folder.lib}">
+            <fileset dir="wtk/lib">
+                <include name="*.jar"/>
+            </fileset>
+        </copy>
+
+        <!-- Delete old signed jars and old already deployed jars -->
+        <delete>
+            <fileset dir="${folder.lib}" includes="**/*.war"/>
+            <fileset dir="${folder.lib}" includes="**/*.signed.jar"/>
+        </delete>
+
+        <!-- Sign JARS -->
+        <mkdir dir="${folder.lib}/signed"/>
+        <copy todir="${folder.lib}/signed">
+            <fileset dir="${folder.lib}">
+                <include name="*.jar"/>
+                <exclude name="*.signed.jar"/>
+            </fileset>
+        </copy>
+
+        <signjar keystore="${keystore.location}" storepass="${keystore.passwd}"
+            alias="${keystore.alias}" preservelastmodified="true" lazy="true"
+            tsaurl="http://tsa.starfieldtech.com">
+            <path>
+                <fileset dir="${folder.lib}/signed" includes="*.jar" />
+            </path>
+        </signjar>
+
+        <copy todir="${folder.lib}">
+            <fileset dir="${folder.lib}/signed" includes="*.jar" />
+            <mapper type="glob" from="*.jar" to="*.signed.jar"/>
+        </copy>
+
+        <delete dir="${folder.lib}/signed"/>
+
+        <!-- Deploy demos -->
+        <mkdir dir="demos/${folder.deploy}/lib"/>
+        <delete>
+            <fileset dir="demos/${folder.deploy}/lib" includes="**/*.jar"/>
+        </delete>
+        <copy todir="demos/${folder.deploy}/lib">
+            <fileset dir="${folder.lib}">
+                <include name="*.jar"/>
+                <exclude name="*-server*.jar"/>
+            </fileset>
+        </copy>
+
+        <!-- Transform demos index -->
+        <xslt basedir="demos/www"
+            destdir="demos/${folder.deploy}"
+            extension=".html"
+            force="true"
+            style="demos/xsl/index.xsl"
+            includes="index.xml"/>
+
+        <!-- Transform demos html -->
+        <xslt basedir="demos/www"
+            destdir="demos/${folder.deploy}"
+            extension=".html"
+            force="true"
+            style="demos/xsl/demo.html.xsl"
+            includes="*.xml"
+            excludes="index.xml">
+            <param name="version" expression="${version}"/>
+            <param name="root" expression="${ant.project.name}-demos"/>
+        </xslt>
+
+        <!-- Transform demos jnlp -->
+        <xslt basedir="demos/www"
+            destdir="demos/${folder.deploy}"
+            extension=".jnlp"
+            force="true"
+            style="demos/xsl/demo.jnlp.xsl"
+            includes="*.xml"
+            excludes="index.xml">
+            <param name="version" expression="${version}"/>
+            <param name="root" expression="${local.server}/${ant.project.name}-demos"/>
+        </xslt>
+
+        <!-- Copy static demo files to deploy folder -->
+        <copy todir="demos/${folder.deploy}">
+            <fileset dir="demos/www">
+                <exclude name="**/*.xml"/>
+                <exclude name="**/*.template.html"/>
+            </fileset>
+        </copy>
+
+        <copy todir="demos/${folder.deploy}">
+            <fileset dir="demos/www">
+                <include name="*.template.html"/>
+            </fileset>
+            <filterset>
+                <filter token="VERSION" value="${version}"/>
+            </filterset>
+            <globmapper from="*.template.html" to="*.html"/>
+        </copy>
+
+        <!-- Generate demos WAR -->
+        <war destfile="${folder.lib}/${ant.project.name}-demos.war" webxml="demos/web.xml">
+            <fileset dir="demos/${folder.deploy}"/>
+
+            <classes dir="demos-server/${folder.bin}"/>
+            <classes dir="demos-server/src">
+                <exclude name="**/*.java"/>
+                <exclude name="**/*.bak"/>
+                <exclude name="**/package.html"/>
+            </classes>
+            <lib dir="${folder.lib}">
+                <include name="${jar.core}"/>
+                <include name="${jar.web}"/>
+                <include name="${jar.web-server}"/>
+            </lib>
+        </war>
+
+        <!-- Deploy tutorials -->
+        <mkdir dir="tutorials/${folder.deploy}/lib"/>
+        <delete>
+            <fileset dir="tutorials/${folder.deploy}/lib" includes="**/*.jar"/>
+        </delete>
+        <copy todir="tutorials/${folder.deploy}/lib">
+            <fileset dir="${folder.lib}">
+                <include name="*.jar"/>
+                <exclude name="*-demos*.jar"/>
+                <exclude name="*-server*.jar"/>
+            </fileset>
+        </copy>
+
+        <!-- Transform tutorials index -->
+        <xslt basedir="tutorials/www"
+            destdir="tutorials/${folder.deploy}"
+            extension=".html"
+            force="true"
+            style="tutorials/xsl/index.xsl"
+            includes="index.xml"/>
+
+        <!-- Transform tutorials html -->
+        <xslt basedir="tutorials/www"
+            destdir="tutorials/${folder.deploy}"
+            extension=".html"
+            force="true"
+            style="tutorials/xsl/tutorial.xsl"
+            includes="*.xml"
+            excludes="index.xml">
+            <param name="version" expression="${version}"/>
+        </xslt>
+
+        <!-- Copy static tutorial files to deploy folder -->
+        <copy todir="tutorials/${folder.deploy}">
+            <fileset dir="tutorials/www">
+                <exclude name="**/*.xml"/>
+                <exclude name="**/*.template.html"/>
+            </fileset>
+        </copy>
+
+        <copy todir="tutorials/${folder.deploy}">
+            <fileset dir="tutorials/www">
+                <include name="*.template.html"/>
+            </fileset>
+            <filterset>
+                <filter token="VERSION" value="${version}"/>
+            </filterset>
+            <globmapper from="*.template.html" to="*.html"/>
+        </copy>
+
+        <!-- Generate tutorials WAR -->
+        <war destfile="${folder.lib}/${ant.project.name}-tutorials.war" webxml="tutorials/web.xml">
+            <fileset dir="tutorials/${folder.deploy}"/>
+
+            <classes dir="tutorials-server/${folder.bin}"/>
+            <classes dir="tutorials-server/src">
+                <exclude name="**/*.java"/>
+                <exclude name="**/*.bak"/>
+                <exclude name="**/package.html"/>
+            </classes>
+            <lib dir="${folder.lib}">
+                <include name="${jar.core}"/>
+                <include name="${jar.web}"/>
+                <include name="${jar.web-server}"/>
+            </lib>
+        </war>
+    </target>
+
+    <!-- Installs JARs to local Maven repository -->
+    <target name="maven-install" depends="clean, package, package-sources, package-javadoc">
+        <mkdir dir="maven-install"/>
+
+        <copy todir="maven-install">
+            <fileset dir=".">
+                <include name="**/pom.xml"/>
+            </fileset>
+            <filterset>
+                <filter token="VERSION" value="${version}"/>
+            </filterset>
+        </copy>
+
+        <artifact:install file="maven-install/pom.xml">
+            <artifact:pom file="maven-install/pom.xml"/>
+        </artifact:install>
+        <artifact:install file="lib/${jar.core}">
+            <artifact:pom file="maven-install/core/pom.xml"/>
+            <attach file="lib/${jar.core.sources}" classifier="sources" />
+            <attach file="lib/${jar.core.javadoc}" classifier="javadoc" />
+        </artifact:install>
+        <artifact:install file="lib/${jar.web}">
+            <artifact:pom file="maven-install/web/pom.xml"/>
+            <attach file="lib/${jar.web.sources}" classifier="sources" />
+            <attach file="lib/${jar.web.javadoc}" classifier="javadoc" />
+        </artifact:install>
+        <artifact:install file="lib/${jar.web-server}">
+            <artifact:pom file="maven-install/web-server/pom.xml"/>
+            <attach file="lib/${jar.web-server.sources}" classifier="sources" />
+            <attach file="lib/${jar.web-server.javadoc}" classifier="javadoc" />
+        </artifact:install>
+        <artifact:install file="lib/${jar.wtk}">
+            <artifact:pom file="maven-install/wtk/pom.xml"/>
+            <attach file="lib/${jar.wtk.sources}" classifier="sources" />
+            <attach file="lib/${jar.wtk.javadoc}" classifier="javadoc" />
+        </artifact:install>
+        <artifact:install file="lib/${jar.wtk-terra}">
+            <artifact:pom file="maven-install/wtk-terra/pom.xml"/>
+            <attach file="lib/${jar.wtk-terra.sources}" classifier="sources" />
+            <attach file="lib/${jar.wtk-terra.javadoc}" classifier="javadoc" />
+        </artifact:install>
+        <artifact:install file="lib/${jar.charts}">
+            <artifact:pom file="maven-install/charts/pom.xml"/>
+            <attach file="lib/${jar.charts.sources}" classifier="sources" />
+            <attach file="lib/${jar.charts.javadoc}" classifier="javadoc" />
+        </artifact:install>
+
+        <delete dir="maven-install"/>
+    </target>
+
+    <!-- Remove trailing white space in all source files -->
+    <target name="trim-whitespace" depends="environment-info">
+        <fileset id="trimfiles" dir=".">
+            <include name="BUILD"/>
+            <include name="LICENSE"/>
+            <include name="NOTICE"/>
+            <include name="README"/>
+            <include name="RELEASE-NOTES"/>
+            <include name="**/*.java"/>
+            <include name="**/*.html"/>
+            <include name="**/*.css"/>
+            <include name="**/*.csv"/>
+            <include name="**/*.js"/>
+            <include name="**/*.jsp"/>
+            <include name="**/*.txt"/>
+            <include name="**/*.properties"/>
+            <include name="**/*.xml"/>
+            <include name="**/*.bxml"/>
+            <include name="**/*.xsl"/>
+            <include name="**/*.json"/>
+            <include name="**/*.groovy"/>
+            <include name="**/*.scala"/>
+            <include name="**/*.sql"/>
+        </fileset>
+        <replaceregexp match="[\t]" replace="    " flags="gm" byline="true">
+            <fileset refid="trimfiles"/>
+        </replaceregexp>
+        <replaceregexp match="[\t ]+$" replace="" flags="gm" byline="true">
+            <fileset refid="trimfiles"/>
+        </replaceregexp>
+    </target>
+
+    <!-- Run our custom checkstyle on all the source -->
+    <target name="check-style">
+        <cs:checkstyle config="pivot_checks.xml" failOnViolation="false">
+            <fileset dir=".">
+                <include name="**/src/org/**/*.java"/>
+                <include name="**/test/org/**/*.java"/>
+            </fileset>
+            <cs:formatter type="plain" toFile="style_errors.log"/>
+        </cs:checkstyle>
+        <javac srcdir="." includeantruntime="false">
+            <include name="StyleErrors.java"/>
+        </javac>
+        <java dir="." classname="StyleErrors" fork="true" output="style_summary.log" logError="true">
+            <arg value="style_errors.log"/>
+        </java>
+        <echo message="Style check results in &quot;style_errors.log&quot; and &quot;style_summary.log&quot;"/>
+    </target>
+
+</project>

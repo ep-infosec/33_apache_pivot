@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Licensed to the Apache Software Foundation (ASF) under one or more
+contributor license agreements.  See the NOTICE file distributed with
+this work for additional information regarding copyright ownership.
+The ASF licenses this file to you under the Apache License,
+Version 2.0 (the "License"); you may not use this file except in
+compliance with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+<!--
+This build script demonstrates several ways to package a Pivot application. Each method can
+demonstrated by calling the appropriate build target:
+
+1) As an applet deployed via a Java EE web archive (WAR) file ("deploy-applet").
+
+2) As a Windows executable ("deploy-windows"). This target requires Launch4J, available from
+http://launch4j.sourceforge.net/index.html. This software is distributed under the BSD license.
+
+The software can be installed anywhere; however, the location of the installation directory must
+be specified as a command-line argument when executing Ant:
+
+  -Dlaunch4j.dir=<full path to installation directory>
+
+The example executable requires the presence of a previously installed JRE; however, Launch4J
+can alternatively be configured to bundle a JRE in the resulting executable.
+
+3) As a Mac OS X application bundle ("deploy-osx"). This target requires JarBundler, available
+from http://informagen.com/JarBundler/. This software is distributed under the GNU GPL license.
+
+JarBundler requires Mac OS X. See the project home page for installation instructions.
+-->
+
+<project name="examples" default="compile">
+    <property file="build.properties"/>
+
+    <property name="folder.src" value="src"/>
+    <property name="folder.bin" value="ant-bin"/>
+    <property name="folder.lib" value="lib"/>
+    <property name="folder.www" value="www"/>
+
+    <property name="example.name" value="Deployment Example"/>
+    <property name="example.path" value="org/apache/pivot/examples/deployment"/>
+
+    <property name="example.jar" value="deployment-example.jar"/>
+    <property name="example.war" value="deployment-example.war"/>
+
+    <property name="example.exe" value="deployment-example.exe"/>
+    <property name="example-windows.zip" value="deployment-example-windows.zip"/>
+
+    <property name="example.app" value="${example.name}.app"/>
+    <property name="example-osx.tar.gz" value="deployment-example-osx.tar.gz"/>
+
+    <!-- Compile the example application -->
+    <target name="compile">
+        <echo message="Compiling..."/>
+        <ant target="compile"/>
+
+        <mkdir dir="${ant.project.name}/${folder.bin}"/>
+        <javac srcDir="${ant.project.name}/${folder.src}"
+            destDir="${ant.project.name}/${folder.bin}"
+            classpath="core/${folder.bin}:wtk/${folder.bin}"
+            includejavaruntime="true"
+            includeantruntime="true"
+            deprecation="true"
+            debug="true"
+            target="1.7"
+            encoding="UTF-8"
+            failonerror="true">
+            <include name="${example.path}/**"/>
+        </javac>
+    </target>
+
+    <!-- Generate the example JAR -->
+    <target name="package" depends="compile">
+        <echo message="Packaging..."/>
+        <ant target="package"/>
+
+        <jar destfile="${folder.lib}/${example.jar}">
+            <fileset dir="${ant.project.name}/${folder.bin}"/>
+            <fileset dir="${ant.project.name}/${folder.src}">
+                <include name="${example.path}/**"/>
+                <exclude name="**/*.java"/>
+                <exclude name="web.xml"/>
+            </fileset>
+        </jar>
+    </target>
+
+    <!-- Clean up -->
+    <target name="clean">
+        <ant target="clean"/>
+
+        <delete dir="${ant.project.name}/${folder.bin}"/>
+
+        <delete dir="${ant.project.name}/${folder.www}"/>
+
+        <delete file="${example.exe}"/>
+        <delete file="${example-windows.zip}"/>
+
+        <delete dir="${example.app}"/>
+        <delete file="${example-osx.tar.gz}"/>
+    </target>
+
+    <target name="deploy" depends="deploy-applet, deploy-windows, deploy-osx"/>
+
+    <!-- Package example application for deployment via web browser -->
+    <target name="deploy-applet" depends="package">
+        <echo message="Generating WAR file..."/>
+
+        <mkdir dir="${ant.project.name}/${folder.www}"/>
+        <mkdir dir="${ant.project.name}/${folder.www}/lib"/>
+
+        <!-- Copy the platform JARs -->
+        <copy todir="${ant.project.name}/${folder.www}/lib">
+            <fileset dir="${folder.lib}">
+                <include name="pivot-core-${version}.jar"/>
+                <include name="pivot-wtk-${version}.jar"/>
+                <include name="pivot-wtk-terra-${version}.jar"/>
+            </fileset>
+        </copy>
+
+        <!-- Copy the example JAR -->
+        <copy file="${folder.lib}/${example.jar}" todir="${ant.project.name}/${folder.www}/lib"/>
+
+        <!-- Generate the host page -->
+        <copy file="${ant.project.name}/${folder.src}/${example.path}/index.html"
+            tofile="${ant.project.name}/${folder.www}/index.html">
+            <filterset>
+                <filter token="version" value="${version}"/>
+            </filterset>
+        </copy>
+
+        <!-- Generate the WAR file -->
+        <war destfile="${folder.lib}/${example.war}"
+            webxml="${ant.project.name}/${folder.src}/${example.path}/web.xml">
+            <fileset dir="${ant.project.name}/${folder.www}"/>
+        </war>
+    </target>
+
+    <!-- Package example application for deployment via Windows executable -->
+    <target name="deploy-windows" depends="package">
+        <echo message="Generating Windows executable..."/>
+
+        <taskdef name="launch4j" classname="net.sf.launch4j.ant.Launch4jTask"
+            classpath="${launch4j.dir}/launch4j.jar:${launch4j.dir}/lib/xstream.jar"/>
+
+        <launch4j>
+            <config headerType="gui"
+                jar="${folder.lib}/${example.jar}"
+                icon="${ant.project.name}/${folder.src}/${example.path}/logo-notext-256x256.ico"
+                cmdLine="org.apache.pivot.examples.deployment.DeploymentExample"
+                outfile="${example.exe}">
+                <classPath mainClass="org.apache.pivot.wtk.DesktopApplicationContext"
+                    cp="${folder.lib}/pivot-core-${version}.jar;${folder.lib}/pivot-wtk-${version}.jar;${folder.lib}/pivot-wtk-terra-${version}.jar"/>
+                <jre minVersion="1.7.0">
+                    <opt>-Dorg.apache.pivot.wtk.skin.terra.location=TerraTheme_winxp1.json</opt>
+                </jre>
+            </config>
+        </launch4j>
+
+        <zip destfile="${example-windows.zip}">
+            <zipfileset dir=".">
+                <include name="${example.exe}"/>
+                <include name="${folder.lib}/pivot-core-${version}.jar"/>
+                <include name="${folder.lib}/pivot-wtk-${version}.jar"/>
+                <include name="${folder.lib}/pivot-wtk-terra-${version}.jar"/>
+            </zipfileset>
+        </zip>
+    </target>
+
+    <!-- Package example application for deployment via Mac OS X bundle -->
+    <target name="deploy-osx" depends="package">
+        <echo message="Generating OS X application bundle..."/>
+
+        <taskdef name="jarbundler" classname="net.sourceforge.jarbundler.JarBundler"/>
+
+        <jarbundler dir="."
+            name="${example.name}"
+            mainclass="org.apache.pivot.wtk.DesktopApplicationContext"
+            arguments="org.apache.pivot.examples.deployment.DeploymentExample"
+            vmoptions="-Dorg.apache.pivot.wtk.skin.terra.location=TerraTheme_osx.json"
+            icon="${ant.project.name}/${folder.src}/${example.path}/logo-notext-256x256.icns">
+            <jarfileset dir="${folder.lib}">
+                <include name="${example.jar}"/>
+                <include name="pivot-core-${version}.jar"/>
+                <include name="pivot-wtk-${version}.jar"/>
+                <include name="pivot-wtk-terra-${version}.jar"/>
+            </jarfileset>
+        </jarbundler>
+
+        <exec executable="tar">
+            <arg value="cvzf"/>
+            <arg value="${example-osx.tar.gz}"/>
+            <arg value="${example.app}"/>
+        </exec>
+    </target>
+</project>
